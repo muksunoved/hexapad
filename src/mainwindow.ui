@@ -85,6 +85,21 @@
           <string>Romb</string>
          </property>
         </item>
+        <item>
+         <property name="text">
+          <string>Forward</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>Calibre</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>Step</string>
+         </property>
+        </item>
        </widget>
       </item>
       <item row="2" column="0">
