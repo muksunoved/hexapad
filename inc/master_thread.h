@@ -82,6 +82,7 @@ private:
     void calibrate(CCommPort& serial ,const QString& fus_name);
 
     void forward(CCommPort &serial);
+    void Rotate(CCommPort &serial, bool left);
 
     QMap<size_t,FusPoint> last_step;
     QMap<size_t,FusDegrees> last_degrees;

@@ -87,6 +87,16 @@
         </item>
         <item>
          <property name="text">
+          <string>RotateLeft</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>RotateRight</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
           <string>Forward</string>
          </property>
         </item>

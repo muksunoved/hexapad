@@ -97,24 +97,24 @@ static const QVector<MasterThread::FusPoint>kStepsMotion = {
 };
 
 static const QVector<MasterThread::FusPoint>kTripodPos1 = {
-    {   0.0, 100.0 , 80.0},
-    {-100.0, 100.0 , 80.0},
-    {-100.0, 100.0 , 80.0},
-    {-100.0, 100.0 , 60.0},
-    {   0.0, 100.0 , 60.0},
-    { 100.0, 100.0 , 60.0},
-    { 100.0, 100.0 , 80.0},
-    { 100.0, 100.0 , 80.0},
+    {  0.0, 120.0 , 120.0},
+    {-75.0, 120.0 , 120.0},
+    {-75.0, 120.0 , 120.0},
+    {-75.0, 120.0 , 70.0},
+    {  0.0, 120.0 , 60.0},
+    { 75.0, 120.0 , 70.0},
+    { 75.0, 120.0 , 120.0},
+    { 75.0, 120.0 , 120.0},
 };
 static const QVector<MasterThread::FusPoint>kTripodPos2 = {
-    {   0.0, 100.0 , 60.0},
-    { 100.0, 100.0 , 60.0},
-    { 100.0, 100.0 , 80.0},
-    { 100.0, 100.0 , 80.0},
-    {   0.0, 100.0 , 80.0},
-    {-100.0, 100.0 , 80.0},
-    {-100.0, 100.0 , 80.0},
-    {-100.0, 100.0 , 60.0},
+    {  0.0, 120.0 , 60.0},
+    { 75.0, 120.0 , 70.0},
+    { 75.0, 120.0 , 120.0},
+    { 75.0, 120.0 , 120.0},
+    {  0.0, 120.0 , 120.0},
+    {-75.0, 120.0 , 120.0},
+    {-75.0, 120.0 , 120.0},
+    {-75.0, 120.0 , 70.0},
 };
 
 static const QMap<size_t,MasterThread::FusPoint>kStepOne = {
@@ -174,7 +174,7 @@ int MasterThread::get_max_time(FusDegrees a, FusDegrees b)
     int max = std::max(abs((a.coxa - b.coxa)),
     abs((a.tibia - b.tibia)));
     max = std::max(max, abs(a.femur - b.femur));
-    float time = float(max) / 1500.0 * 2000.0;
+    float time = float(max) / 1500.0 * 1500.0;
     return int(time);
 }
 
@@ -237,6 +237,98 @@ void MasterThread::motion_step(CCommPort &serial, const QString& fus_name)
     }
 }
 
+void MasterThread::Rotate(CCommPort &serial, bool left)
+{
+    QMap<Servos, QVector<FusPoint>>initial_step;
+    QMap<Servos, QVector<FusDegrees>>degrees;
+
+    auto last_degrees_saved = last_degrees;
+    auto last_point_saved = last_step;
+
+    qDebug() << "Prepare pos";
+
+    if (!left) {
+        for (int i=0; i<kTripodPos1.size(); i++) {
+            auto tripod_pos = kTripodPos1[i];
+            initial_step[Servos::kRightRear		].push_back(tripod_pos);
+            initial_step[Servos::kLeftCentre	].push_back(tripod_pos);
+            initial_step[Servos::kRightFront	].push_back(tripod_pos);
+
+            tripod_pos = kTripodPos2[i];
+            initial_step[Servos::kLeftRear		].push_back(tripod_pos);
+            initial_step[Servos::kRightCentre	].push_back(tripod_pos);
+            initial_step[Servos::kLeftFront		].push_back(tripod_pos);
+        }
+    } else {
+
+        for (int i=kTripodPos1.size()-1; i>=0; i--) {
+            auto tripod_pos = kTripodPos1[i];
+            initial_step[Servos::kRightRear		].push_back(tripod_pos);
+            initial_step[Servos::kLeftCentre	].push_back(tripod_pos);
+            initial_step[Servos::kRightFront	].push_back(tripod_pos);
+
+            tripod_pos = kTripodPos2[i];
+            initial_step[Servos::kLeftRear		].push_back(tripod_pos);
+            initial_step[Servos::kRightCentre	].push_back(tripod_pos);
+            initial_step[Servos::kLeftFront		].push_back(tripod_pos);
+        }
+    }
+
+    qDebug() << "Prepare degrees";
+
+    for(auto pos = initial_step.begin(); pos != initial_step.end(); pos++) {
+        auto size = pos.value().size();
+        auto values = pos.value();
+        auto servos = pos.key();
+        for (int i = 0; i<size; i++) {
+            auto next = prepare_motion_from_to(values[i],Servos::kLeftCentre);
+            next.time = get_max_time(last_degrees[servos], next);
+            last_degrees[servos] = next;
+            degrees[servos].push_back(next);
+            QString d = QString("[ %1 %2 %3 %4]")
+                    .arg(next.coxa)
+                    .arg(next.femur)
+                    .arg(next.tibia)
+                    .arg(next.time);
+            qDebug() << d;
+        }
+    }
+
+    last_degrees = last_degrees_saved;
+    last_step = last_point_saved;
+
+    qDebug() << "Motion";
+
+    while(!quit) {
+        for (int i=0; i<kTripodPos1.size(); i++) {
+            int time = 0;
+            QString cmd;
+            for(auto deg = degrees.begin(); deg != degrees.end(); deg++) {
+                auto servos = deg.key();
+                auto fus = fuses[servos];
+                auto pnt = deg.value()[i];
+                pnt.time = get_max_time(last_degrees[servos], pnt);
+                time = std::max(time, pnt.time);
+
+                cmd += QString("#%1 P%2 #%3 P%4 #%5 P%6 ")
+                    .arg(fus.coxa).arg(pnt.coxa)
+                    .arg(fus.femur).arg(pnt.femur)
+                    .arg(fus.tibia).arg(pnt.tibia);
+                last_degrees[servos]  = pnt;
+            }
+            time = std::min(2000, time);
+
+            qDebug() << "Time: " << time;
+
+            cmd += QString("T%1\r").arg(time);
+            QByteArray requestData = cmd.toLocal8Bit();
+            serial.WriteBlock(requestData.data(), requestData.size());
+            this->msleep(time);
+        }
+
+    }
+
+}
 void MasterThread::forward(CCommPort &serial)
 {
     QMap<Servos, QVector<FusPoint>>initial_step;
@@ -249,21 +341,21 @@ void MasterThread::forward(CCommPort &serial)
 
     for (int i=0; i<kTripodPos1.size(); i++) {
         auto tripod_pos = kTripodPos1[i];
-        tripod_pos.x -= 100;
+        tripod_pos.x -= 75.0;
         initial_step[Servos::kRightRear		].push_back(tripod_pos);
         tripod_pos = kTripodPos1[i];
         initial_step[Servos::kLeftCentre	].push_back(tripod_pos);
         tripod_pos = kTripodPos1[i];
-        tripod_pos.x += 100;
+        tripod_pos.x += 75.0;
         initial_step[Servos::kRightFront	].push_back(tripod_pos);
 
         tripod_pos = kTripodPos2[i];
-        tripod_pos.x -= 100;
+        tripod_pos.x -= 75.0;
         initial_step[Servos::kLeftRear		].push_back(tripod_pos);
         tripod_pos = kTripodPos2[i];
         initial_step[Servos::kRightCentre	].push_back(tripod_pos);
         tripod_pos = kTripodPos2[i];
-        tripod_pos.x += 100;
+        tripod_pos.x += 75.0;
         initial_step[Servos::kLeftFront		].push_back(tripod_pos);
     }
     qDebug() << "Prepare degrees";
@@ -293,22 +385,25 @@ void MasterThread::forward(CCommPort &serial)
 
     while(!quit) {
         for (int i=0; i<kTripodPos1.size(); i++) {
-            QString cmd;
             int time = 0;
+            QString cmd;
             for(auto deg = degrees.begin(); deg != degrees.end(); deg++) {
                 auto servos = deg.key();
                 auto fus = fuses[servos];
                 auto pnt = deg.value()[i];
+                pnt.time = get_max_time(last_degrees[servos], pnt);
                 time = std::max(time, pnt.time);
 
                 cmd += QString("#%1 P%2 #%3 P%4 #%5 P%6 ")
                     .arg(fus.coxa).arg(pnt.coxa)
                     .arg(fus.femur).arg(pnt.femur)
                     .arg(fus.tibia).arg(pnt.tibia);
-
                 last_degrees[servos]  = pnt;
             }
             time = std::min(2000, time);
+
+            qDebug() << "Time: " << time;
+
             cmd += QString("T%1\r").arg(time);
             QByteArray requestData = cmd.toLocal8Bit();
             serial.WriteBlock(requestData.data(), requestData.size());
@@ -484,6 +579,18 @@ void MasterThread::run()
             qDebug() << "Contain Forward";
             while(!quit) {
                 forward(serial);
+            }
+        }
+        if (currentRequest.contains("RotateLeft")) {
+            qDebug() << "Contain Forward";
+            while(!quit) {
+                Rotate(serial, true);
+            }
+        }
+        if (currentRequest.contains("RotateRight")) {
+            qDebug() << "Contain Forward";
+            while(!quit) {
+                Rotate(serial, false);
             }
         }
         set_initial_position(serial);
